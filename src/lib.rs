@@ -9,7 +9,7 @@ use core::fmt::{self, Debug, Pointer, Formatter};
 /// This type has the same in-memory representation as a `fn()`.
 ///
 /// **Note**: This type is only available on platforms that support atomic
-/// loads and stores of pointers. Its size depends on the target pointer's size.
+/// loads and stores of pointers. Its size depends on the target's pointer size.
 #[repr(transparent)]
 pub struct AtomicFnPtr<T: FnPtr> {
     atomic: AtomicPtr<FnPtrTarget>,
@@ -47,11 +47,11 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// Loads a value from the pointer.
     ///
     /// `load` takes an [`Ordering`] argument which describes the memory ordering
-    /// of this operation. Possible values are [`SeqCst`], [`Acquire`] and [`Relaxed`].
+    /// of this operation. Possible values are [`Ordering::SeqCst`], [`Ordering::Acquire`] and [`Ordering::Relaxed`].
     ///
     /// # Panics
     ///
-    /// Panics if `order` is [`Release`] or [`AcqRel`].
+    /// Panics if `order` is [`Ordering::Release`] or [`Ordering::AcqRel`].
     #[inline]
     pub fn load(&self, order: Ordering) -> T {
         unsafe { raw_ptr_to_fn_ptr(self.atomic.load(order)) }
@@ -60,11 +60,11 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// Stores a value into the pointer.
     ///
     /// `store` takes an [`Ordering`] argument which describes the memory ordering
-    /// of this operation. Possible values are [`SeqCst`], [`Release`] and [`Relaxed`].
+    /// of this operation. Possible values are [`Ordering::SeqCst`], [`Ordering::Release`] and [`Ordering::Relaxed`].
     ///
     /// # Panics
     ///
-    /// Panics if `order` is [`Acquire`] or [`AcqRel`].
+    /// Panics if `order` is [`Ordering::Acquire`] or [`Ordering::AcqRel`].
     #[inline]
     pub fn store(&self, fn_ptr: T, order: Ordering) {
         self.atomic.store(unsafe { fn_ptr_to_raw_ptr(fn_ptr) }, order);
@@ -74,8 +74,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// `swap` takes an [`Ordering`] argument which describes the memory ordering
     /// of this operation. All ordering modes are possible. Note that using
-    /// [`Acquire`] makes the store part of this operation [`Relaxed`], and
-    /// using [`Release`] makes the load part [`Relaxed`].
+    /// [`Ordering::Acquire`] makes the store part of this operation [`Ordering::Relaxed`], and
+    /// using [`Ordering::Release`] makes the load part [`Ordering::Relaxed`].
     ///
     /// **Note:** This method is only available on platforms that support atomic
     /// operations on pointers.
@@ -90,10 +90,10 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// was updated.
     ///
     /// `compare_and_swap` also takes an [`Ordering`] argument which describes the memory
-    /// ordering of this operation. Notice that even when using [`AcqRel`], the operation
-    /// might fail and hence just perform an `Acquire` load, but not have `Release` semantics.
-    /// Using [`Acquire`] makes the store part of this operation [`Relaxed`] if it
-    /// happens, and using [`Release`] makes the load part [`Relaxed`].
+    /// ordering of this operation. Notice that even when using [`Ordering::AcqRel`], the operation
+    /// might fail and hence just perform an `Ordering::Acquire` load, but not have `Ordering::Release` semantics.
+    /// Using [`Ordering::Acquire`] makes the store part of this operation [`Ordering::Relaxed`] if it
+    /// happens, and using [`Ordering::Release`] makes the load part [`Ordering::Relaxed`].
     ///
     /// **Note:** This method is only available on platforms that support atomic
     /// operations on pointers.
@@ -105,11 +105,11 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// Original | Success | Failure
     /// -------- | ------- | -------
-    /// Relaxed  | Relaxed | Relaxed
-    /// Acquire  | Acquire | Acquire
-    /// Release  | Release | Relaxed
-    /// AcqRel   | AcqRel  | Acquire
-    /// SeqCst   | SeqCst  | SeqCst
+    /// Ordering::Relaxed  | Ordering::Relaxed | Ordering::Relaxed
+    /// Ordering::Acquire  | Ordering::Acquire | Ordering::Acquire
+    /// Ordering::Release  | Ordering::Release | Ordering::Relaxed
+    /// Ordering::AcqRel   | Ordering::AcqRel  | Ordering::Acquire
+    /// Ordering::SeqCst   | Ordering::SeqCst  | Ordering::SeqCst
     ///
     /// `compare_exchange_weak` is allowed to fail spuriously even when the comparison succeeds,
     /// which allows the compiler to generate better assembly code when the compare and swap
@@ -117,19 +117,20 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     #[deprecated(
         since = "0.1.0",
         note = "\
-            Use `compare_exchange` or `compare_exchange_weak` instead. \
-            Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types\
+        Use `compare_exchange` or `compare_exchange_weak` instead. \
+        Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types\
         "
     )]
     #[inline]
     pub fn compare_and_swap(&self, current: T, new: T, order: Ordering) -> T {
         #[allow(deprecated)] unsafe {
             raw_ptr_to_fn_ptr(
-                self.atomic.compare_and_swap(
-                    fn_ptr_to_raw_ptr(current),
-                    fn_ptr_to_raw_ptr(new),
-                    order,
-                )
+                self.atomic
+                    .compare_and_swap(
+                        fn_ptr_to_raw_ptr(current),
+                        fn_ptr_to_raw_ptr(new),
+                        order,
+                    )
             )
         }
     }
@@ -143,9 +144,9 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// ordering of this operation. `success` describes the required ordering for the
     /// read-modify-write operation that takes place if the comparison with `current` succeeds.
     /// `failure` describes the required ordering for the load operation that takes place when
-    /// the comparison fails. Using [`Acquire`] as success ordering makes the store part
-    /// of this operation [`Relaxed`], and using [`Release`] makes the successful load
-    /// [`Relaxed`]. The failure ordering can only be [`SeqCst`], [`Acquire`] or [`Relaxed`]
+    /// the comparison fails. Using [`Ordering::Acquire`] as success ordering makes the store part
+    /// of this operation [`Ordering::Relaxed`], and using [`Ordering::Release`] makes the successful load
+    /// [`Ordering::Relaxed`]. The failure ordering can only be [`Ordering::SeqCst`], [`Ordering::Acquire`] or [`Ordering::Relaxed`]
     /// and must be equivalent to or weaker than the success ordering.
     ///
     /// **Note:** This method is only available on platforms that support atomic
@@ -182,9 +183,9 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// ordering of this operation. `success` describes the required ordering for the
     /// read-modify-write operation that takes place if the comparison with `current` succeeds.
     /// `failure` describes the required ordering for the load operation that takes place when
-    /// the comparison fails. Using [`Acquire`] as success ordering makes the store part
-    /// of this operation [`Relaxed`], and using [`Release`] makes the successful load
-    /// [`Relaxed`]. The failure ordering can only be [`SeqCst`], [`Acquire`] or [`Relaxed`]
+    /// the comparison fails. Using [`Ordering::Acquire`] as success ordering makes the store part
+    /// of this operation [`Ordering::Relaxed`], and using [`Ordering::Release`] makes the successful load
+    /// [`Ordering::Relaxed`]. The failure ordering can only be [`Ordering::SeqCst`], [`Ordering::Acquire`] or [`Ordering::Relaxed`]
     /// and must be equivalent to or weaker than the success ordering.
     ///
     /// **Note:** This method is only available on platforms that support atomic
@@ -225,10 +226,10 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// required ordering for loads. These correspond to the success and failure
     /// orderings of [`AtomicPtr::compare_exchange`] respectively.
     ///
-    /// Using [`Acquire`] as success ordering makes the store part of this
-    /// operation [`Relaxed`], and using [`Release`] makes the final successful
-    /// load [`Relaxed`]. The (failed) load ordering can only be [`SeqCst`],
-    /// [`Acquire`] or [`Relaxed`] and must be equivalent to or weaker than the
+    /// Using [`Ordering::Acquire`] as success ordering makes the store part of this
+    /// operation [`Ordering::Relaxed`], and using [`Ordering::Release`] makes the final successful
+    /// load [`Ordering::Relaxed`]. The (failed) load ordering can only be [`Ordering::SeqCst`],
+    /// [`Ordering::Acquire`] or [`Ordering::Relaxed`] and must be equivalent to or weaker than the
     /// success ordering.
     ///
     /// **Note:** This method is only available on platforms that support atomic
@@ -354,11 +355,19 @@ impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L);
 //impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 //impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
-const  _: () = {
+const _: () = {
     use core::mem::{size_of, align_of};
-    let [] = [(); align_of::<fn()>() - align_of::<*mut FnPtrTarget>()];
-    let [] = [(); size_of::<fn()>() - size_of::<*mut FnPtrTarget>()];
-    //if size_of::<fn()>() != size_of::<*mut FnPtrTarget>() || align_of::<fn()>() != align_of::<*mut FnPtrTarget>() {
-    //    panic!("The layout of function pointers and data pointers may not be the same on the target platform.")
-    //}
+    // If the align of both is equal, we get false, which is 0 when cast to an unsigned type
+    let [] = ["The layout of function pointers and data pointers is not be the same on the target platform.";
+        (align_of::<fn()>() != align_of::<*mut FnPtrTarget>()) as usize
+    ];
+    // If the size of both is equal, we get false, which is 0 when cast to an unsigned type
+    let [] = ["The layout of function pointers and data pointers is not be the same on the target platform.";
+        (size_of::<fn()>() != size_of::<*mut FnPtrTarget>()) as usize
+    ];
+    /*
+    if size_of::<fn()>() != size_of::<*mut FnPtrTarget>() || align_of::<fn()>() != align_of::<*mut FnPtrTarget>() {
+        panic!("The layout of function pointers and data pointers is not be the same on the target platform.")
+    }
+    */
 };
