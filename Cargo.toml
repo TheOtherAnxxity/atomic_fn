@@ -1,7 +1,12 @@
 [package]
 name = "atomic_fn"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2018"
 license = "MIT OR Apache-2.0"
+authors = ["TheOtherAnxxity"]
+documentation = "https://docs.rs/atomic_fn/latest/"
+categories = ["no-std"]
+keywords = ["no_std", "atomic"]
+description = "Generic AtomicFnPtr<T> wrapper type for atomic function pointers"
 
 [dependencies]

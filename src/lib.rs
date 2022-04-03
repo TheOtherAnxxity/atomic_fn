@@ -1,11 +1,56 @@
 #![no_std]
 
+const PTR_SIZE: usize = core::mem::size_of::<*mut ()>();
+const USIZE_SIZE: usize = core::mem::size_of::<usize>();
+
+macro_rules! get_atomic {
+    (($ty: ty, $u_cell: expr) => |$atomic: ident| { $($body:tt)* }) => {
+        if core::mem::size_of::<$ty>() == PTR_SIZE {
+            use core::sync::atomic::AtomicPtr;
+
+            let $atomic = &*($u_cell.get() as *mut AtomicPtr<()>);
+            $($body)*
+
+        } else if core::mem::size_of::<$ty>() == USIZE_SIZE {
+            use core::sync::atomic::AtomicUsize;
+
+            let $atomic = &*($u_cell.get() as *mut AtomicUsize);
+            $($body)*
+        } else {
+            use core::sync::atomic::{
+                AtomicU8,
+                AtomicU16,
+                AtomicU32,
+                AtomicU64,
+            };
+
+            match core::mem::size_of::<$ty>() {
+                8 => {
+                    let $atomic = &*($u_cell.get() as *mut AtomicU8);
+                    $($body)*
+                },
+                16 => {
+                    let $atomic = &*($u_cell.get() as *mut AtomicU16);
+                    $($body)*
+                },
+                32 => {
+                    let $atomic = &*($u_cell.get() as *mut AtomicU32);
+                    $($body)*
+                },
+                64 => {
+                    let $atomic = &*($u_cell.get() as *mut AtomicU64);
+                    $($body)*
+                },
+                _ => panic!("The crate does not support the current platform"),
+            }
+        }
+    }
+}
 use core::cell::UnsafeCell;
-use core::hash::Hash; //
-use core::sync::atomic::{AtomicPtr, Ordering}; //
-use core::fmt::{self, Debug, Pointer, Formatter};
+use core::fmt::{self, Formatter, Debug, Pointer};
+use core::hash::Hash;
 use core::panic::RefUnwindSafe;
-use core::sync::atomic; //
+use core::sync::atomic::Ordering;
 
 /// A function pointer type which can be safely shared between threads.
 ///
@@ -18,7 +63,7 @@ use core::sync::atomic; //
 #[cfg_attr(target_pointer_width = "32", repr(C, align(4)))]
 #[cfg_attr(target_pointer_width = "64", repr(C, align(8)))]
 pub struct AtomicFnPtr<T: FnPtr> {
-    cell: UnsafeCell<T>
+    cell: UnsafeCell<T>,
 }
 
 impl<T: FnPtr> AtomicFnPtr<T> {
@@ -26,17 +71,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     #[inline]
     pub fn new(fn_ptr: T) -> AtomicFnPtr<T> {
         AtomicFnPtr {
-            cell: UnsafeCell::new(fn_ptr)
+            cell: UnsafeCell::new(fn_ptr),
         }
-    }
-
-    /// Returns a mutable reference to the underlying pointer.
-    ///
-    /// This is safe because the mutable reference guarantees that no other threads are
-    /// concurrently accessing the atomic data.
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.cell.get_mut()
     }
 
     /// Consumes the atomic and returns the contained value.
@@ -48,6 +84,18 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         self.cell.into_inner()
     }
 
+    /// Returns a mutable reference to the underlying pointer.
+    ///
+    /// This is safe because the mutable reference guarantees that no other threads are
+    /// concurrently accessing the atomic data.
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut T {
+        self.cell.get_mut()
+    }
+}
+
+#[allow(unused_variables)]
+impl<T: FnPtr> AtomicFnPtr<T> {
     /// Loads a value from the pointer.
     ///
     /// `load` takes an [`Ordering`] argument which describes the memory ordering
@@ -56,12 +104,12 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// # Panics
     ///
     /// Panics if `order` is [`Ordering::Release`] or [`Ordering::AcqRel`].
-    #[inline]
     pub fn load(&self, order: Ordering) -> T {
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let raw_ptr = atomic.load(order);
-            *((&raw_ptr) as *const *mut () as *const T)
+            get_atomic!((T, self.cell) => |atomic| {
+                let raw = atomic.load(order);
+                *((&raw) as *const _ as *const T)
+            })
         }
     }
 
@@ -73,12 +121,11 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// # Panics
     ///
     /// Panics if `order` is [`Ordering::Acquire`] or [`Ordering::AcqRel`].
-    #[inline]
     pub fn store(&self, fn_ptr: T, order: Ordering) {
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let raw_ptr = *((&fn_ptr) as *const T as *const *mut ());
-            atomic.store(raw_ptr, order);
+            get_atomic!((T, self.cell) => |atomic| {
+                atomic.store(*((&fn_ptr) as *const T as *const _), order);
+            })
         }
     }
 
@@ -91,13 +138,12 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// **Note:** This method is only available on platforms that support atomic
     /// operations on pointers.
-    #[inline]
     pub fn swap(&self, fn_ptr: T, order: Ordering) -> T {
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let new_raw_ptr = *((&fn_ptr) as *const T as *const *mut ());
-            let old_raw_ptr = atomic.swap(new_raw_ptr, order);
-            *((&old_raw_ptr) as *const *mut () as *const T)
+            get_atomic!((T, self.cell) => |atomic| {
+                let old_raw = atomic.swap(*((&fn_ptr) as *const T as *const _), order);
+                *((&old_raw) as *const _ as *const T)
+            })
         }
     }
 
@@ -120,7 +166,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// `compare_and_swap` is equivalent to `compare_exchange` with the following mapping for
     /// memory orderings:
     ///
-    ///  Original  |  Success  |  Failure  
+    ///  Original  |  Success  |  Failure
     /// ---------- | --------- | ---------
     ///  `Relaxed` | `Relaxed` | `Relaxed`
     ///  `Acquire` | `Acquire` | `Acquire`
@@ -157,21 +203,23 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// (some_ptr.load(Ordering::SeqCst))();
     /// ```
     #[deprecated(
-        since = "0.1.0",
-        note = "\
+    since = "0.1.0",
+    note = "\
         Use `compare_exchange` or `compare_exchange_weak` instead. \
         Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types.\
         "
     )]
-    #[inline]
     pub fn compare_and_swap(&self, current: T, new: T, order: Ordering) -> T {
         #[allow(deprecated)]
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let current_raw = *((&current) as *const T as *const *mut ());
-            let new_raw = *((&new) as *const T as *const *mut ());
-            let old_raw = atomic.compare_and_swap(current_raw, new_raw, order);
-            *((&old_raw) as *const *mut () as *const T)
+            get_atomic!((T, self.cell) => |atomic| {
+                let old_raw = atomic.compare_and_swap(
+                    *((&current) as *const T as *const _),
+                    *((&new) as *const T as *const _),
+                    order
+                );
+                *((&old_raw) as *const _ as *const T)
+            })
         }
     }
 
@@ -221,7 +269,6 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// (some_ptr.load(Ordering::SeqCst))();
     /// ```
-    #[inline]
     pub fn compare_exchange(
         &self,
         current: T,
@@ -230,18 +277,18 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         failure: Ordering,
     ) -> Result<T, T> {
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let current_raw = *((&current) as *const T as *const *mut ());
-            let new_raw = *((&new) as *const T as *const *mut ());
-            atomic
-                .compare_exchange(
-                    current_raw,
-                    new_raw,
+            get_atomic!((T, self.cell) => |atomic| {
+                let result = atomic.compare_exchange(
+                    *((&current) as *const T as *const _),
+                    *((&new) as *const T as *const _),
                     success,
-                    failure
-                )
-                .map(|raw_ptr| *((&raw_ptr) as *const *mut () as *const T))
-                .map_err(|raw_ptr| *((&raw_ptr) as *const *mut () as *const T))
+                    failure,
+                );
+                match result {
+                    Ok(raw) => Ok(*((&raw) as *const _ as *const T)),
+                    Err(raw) => Err(*((&raw) as *const _ as *const T))
+                }
+            })
         }
     }
 
@@ -288,16 +335,15 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///     match some_ptr.compare_exchange_weak(old, new, Ordering::SeqCst, Ordering::Relaxed) {
     ///         Ok(x) => {
     ///             x();
-    ///             break
-    ///         },
+    ///             break;
+    ///         }
     ///         Err(x) => {
     ///             x();
     ///             old = x
-    ///         },
+    ///         }
     ///     }
     /// }
     /// ```
-    #[inline]
     pub fn compare_exchange_weak(
         &self,
         current: T,
@@ -306,18 +352,18 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         failure: Ordering,
     ) -> Result<T, T> {
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let current_raw = *((&current) as *const T as *const *mut ());
-            let new_raw = *((&new) as *const T as *const *mut ());
-            atomic
-                .compare_exchange_weak(
-                    current_raw,
-                    new_raw,
+            get_atomic!((T, self.cell) => |atomic| {
+                let result = atomic.compare_exchange_weak(
+                    *((&current) as *const T as *const _),
+                    *((&new) as *const T as *const _),
                     success,
-                    failure
-                )
-                .map(|raw_ptr| *((&raw_ptr) as *const *mut () as *const T))
-                .map_err(|raw_ptr| *((&raw_ptr) as *const *mut () as *const T))
+                    failure,
+                );
+                match result {
+                    Ok(raw) => Ok(*((&raw) as *const _ as *const T)),
+                    Err(raw) => Err(*((&raw) as *const _ as *const T))
+                }
+            })
         }
     }
 
@@ -378,26 +424,28 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// assert_eq!(some_ptr.load(Ordering::SeqCst), new);
     /// (some_ptr.load(Ordering::SeqCst))();
     /// ```
-    #[inline]
     pub fn fetch_update<F>(
         &self,
         set_order: Ordering,
         fetch_order: Ordering,
         mut func: F,
     ) -> Result<T, T>
-    where
-        F: FnMut(T) -> Option<T>,
+        where
+            F: FnMut(T) -> Option<T>,
     {
         unsafe {
-            let atomic = &*(self.cell.get() as *mut AtomicPtr<()>);
-            let func = move |raw_ptr: *mut ()| {
-                let old_fn_ptr = *((&raw_ptr) as *const *mut () as *const T);
-                func(old_fn_ptr).map(|fn_ptr| *((&fn_ptr) as *const T as *const *mut ()))
-            };
-            atomic
-                .fetch_update(set_order, fetch_order, func)
-                .map(|raw_ptr| *((&raw_ptr) as *const *mut () as *const T))
-                .map_err(|raw_ptr| *((&raw_ptr) as *const *mut () as *const T))
+            get_atomic!((T, self.cell) => |atomic| {
+                let result = atomic.fetch_update(set_order, fetch_order, move |raw| {
+                    match func(*((&raw) as *const _ as *const T)) {
+                        Some(fn_ptr) => *((&fn_ptr) as *const T as *const _),
+                        None => None
+                    }
+                });
+                match result {
+                    Ok(raw) => Ok(*((&raw) as *const _ as *const T)),
+                    Err(raw) => Err(*((&raw) as *const _ as *const T))
+                }
+            })
         }
     }
 }
@@ -485,32 +533,15 @@ impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L);
 //impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 
 const _: () = {
-    use core::mem::{align_of, size_of};
-    // If both are equal, we get false, which is 0 when cast to an unsigned integer type
+    use core::mem::{align_of as align, size_of as size};
 
-    let [/* The layout of function pointers and data pointers is not the same on the target platform. */] = [
+    let [/* The crate does not support the target platform. */] = [
         ();
-        (size_of::<fn()>() != size_of::<*mut ()>()) as usize
-    ];
-    let [/* The layout of function pointers and data pointers is not the same on the target platform. */] = [
-        ();
-        (size_of::<extern "C" fn()>() != size_of::<*mut ()>()) as usize
-    ];
-    let [/* The layout of function pointers and data pointers is not the same on the target platform. */] = [
-        ();
-        (align_of::<fn()>() != align_of::<*mut ()>()) as usize
-    ];
-    let [/* The layout of function pointers and data pointers is not the same on the target platform. */] = [
-        ();
-        (align_of::<extern "C" fn()>() != align_of::<*mut ()>()) as usize
+        !(size::<fn()>() == 8 || size::<fn()>() == 16 || size::<fn()>() == 32 || size::<fn()>() == 64) as usize
     ];
 
-    let [/* The layout of data pointers and atomic::AtomicPtr is not the same on the target platform. */] = [
+    let [/* The crate does not support the target platform. */] = [
         ();
-        (size_of::<*mut ()>() != size_of::<AtomicPtr<()>>()) as usize
-    ];
-    let [/* The layout of data pointers and atomic::AtomicPtr is not the same on the target platform. */] = [
-        ();
-        (align_of::<*mut ()>() != align_of::<AtomicPtr<()>>()) as usize
+        !(align::<fn()>() == 1  || align::<fn()>() == 2 || align::<fn()>() == 4 || align::<fn()>() == 8) as usize
     ];
 };
