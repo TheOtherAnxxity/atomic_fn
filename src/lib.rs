@@ -1,22 +1,23 @@
 #![no_std]
 
-const PTR_SIZE: usize = core::mem::size_of::<*mut ()>();
-const USIZE_SIZE: usize = core::mem::size_of::<usize>();
+//! A small, no_std crate that adds atomic function pointers.
+//! See [`AtomicFnPtr`] for examples.
 
 macro_rules! get_atomic {
     (($ty: ty, $u_cell: expr) => |$atomic: ident| { $($body:tt)* }) => {
-        if core::mem::size_of::<$ty>() == PTR_SIZE {
+        if core::mem::size_of::<$ty>() == core::mem::size_of::<*mut ()>() {
             use core::sync::atomic::AtomicPtr;
 
             let $atomic = &*($u_cell.get() as *mut AtomicPtr<()>);
             $($body)*
-
-        } else if core::mem::size_of::<$ty>() == USIZE_SIZE {
+        }
+        else if core::mem::size_of::<$ty>() == core::mem::size_of::<usize>() {
             use core::sync::atomic::AtomicUsize;
 
             let $atomic = &*($u_cell.get() as *mut AtomicUsize);
             $($body)*
-        } else {
+        }
+        else {
             use core::sync::atomic::{
                 AtomicU8,
                 AtomicU16,
@@ -48,7 +49,6 @@ macro_rules! get_atomic {
 }
 use core::cell::UnsafeCell;
 use core::fmt::{self, Formatter, Debug, Pointer};
-use core::hash::Hash;
 use core::panic::RefUnwindSafe;
 use core::sync::atomic::Ordering;
 
@@ -57,7 +57,8 @@ use core::sync::atomic::Ordering;
 /// This type has the same in-memory representation as a `fn()`.
 ///
 /// **Note**: This type is only available on platforms that support atomic
-/// loads and stores of pointers. Its size depends on the target's pointer size.
+/// loads and stores of u8, u16, u32, u64, usize, or pointers.
+/// Its size depends on the target's function pointer size.
 #[cfg_attr(target_pointer_width = "8", repr(C, align(1)))]
 #[cfg_attr(target_pointer_width = "16", repr(C, align(2)))]
 #[cfg_attr(target_pointer_width = "32", repr(C, align(4)))]
@@ -203,8 +204,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// (some_ptr.load(Ordering::SeqCst))();
     /// ```
     #[deprecated(
-    since = "0.1.0",
-    note = "\
+        since = "0.1.0",
+        note = "\
         Use `compare_exchange` or `compare_exchange_weak` instead. \
         Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types.\
         "
@@ -213,12 +214,12 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         #[allow(deprecated)]
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
-                let old_raw = atomic.compare_and_swap(
+                let raw = atomic.compare_and_swap(
                     *((&current) as *const T as *const _),
                     *((&new) as *const T as *const _),
                     order
                 );
-                *((&old_raw) as *const _ as *const T)
+                *((&raw) as *const _ as *const T)
             })
         }
     }
@@ -430,8 +431,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         fetch_order: Ordering,
         mut func: F,
     ) -> Result<T, T>
-        where
-            F: FnMut(T) -> Option<T>,
+    where
+        F: FnMut(T) -> Option<T>,
     {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
@@ -450,12 +451,6 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     }
 }
 
-// SAFETY: We only access the memory atomically
-unsafe impl<T: FnPtr> Sync for AtomicFnPtr<T> {}
-
-// SAFETY: We only access the memory atomically
-impl<T: FnPtr> RefUnwindSafe for AtomicFnPtr<T> {}
-
 impl<T: FnPtr> From<T> for AtomicFnPtr<T> {
     #[inline]
     fn from(fn_ptr: T) -> AtomicFnPtr<T> {
@@ -463,7 +458,7 @@ impl<T: FnPtr> From<T> for AtomicFnPtr<T> {
     }
 }
 
-impl<T: FnPtr> Debug for AtomicFnPtr<T> {
+impl<T: FnPtr + Debug> Debug for AtomicFnPtr<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // This is the same inner code as AtomicPtr::fmt
         // This is only done this way in case
@@ -472,7 +467,7 @@ impl<T: FnPtr> Debug for AtomicFnPtr<T> {
     }
 }
 
-impl<T: FnPtr> Pointer for AtomicFnPtr<T> {
+impl<T: FnPtr + Pointer> Pointer for AtomicFnPtr<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // This is the same inner code as AtomicPtr::fmt
         // This is only done this way in case
@@ -481,11 +476,17 @@ impl<T: FnPtr> Pointer for AtomicFnPtr<T> {
     }
 }
 
+// SAFETY: We only access the memory atomically
+unsafe impl<T: FnPtr + Sync> Sync for AtomicFnPtr<T> {}
+
+// SAFETY: We only access the memory atomically
+impl<T: FnPtr + RefUnwindSafe> RefUnwindSafe for AtomicFnPtr<T> {}
+
 mod sealed {
     pub trait FnPtrSealed {}
 }
 
-pub trait FnPtr: Copy + Eq + Ord + Hash + Pointer + Debug + sealed::FnPtrSealed {
+pub trait FnPtr: Copy + sealed::FnPtrSealed /* Eq + Ord + Hash + Pointer + Debug */ {
     // Empty
 }
 
@@ -529,8 +530,10 @@ impl_fn_ptr!(A, B, C, D, E, F, G, H, I);
 impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J);
 impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K);
 impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L);
-//impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M);
-//impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 const _: () = {
     use core::mem::{align_of as align, size_of as size};

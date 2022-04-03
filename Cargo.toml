@@ -1,12 +1,18 @@
 [package]
+# Essential stuff
 name = "atomic_fn"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2018"
 license = "MIT OR Apache-2.0"
-authors = ["TheOtherAnxxity"]
+# Description and links to documentation and git repository
 documentation = "https://docs.rs/atomic_fn/latest/"
+repository = "https://github.com/TheOtherAnxxity/atomic_fn"
+description = "Generic AtomicFnPtr<T> wrapper type for atomic function pointers"
+# Categories and keywords
 categories = ["no-std"]
 keywords = ["no_std", "atomic"]
-description = "Generic AtomicFnPtr<T> wrapper type for atomic function pointers"
+# Readme and authors
+readme = "README.md"
+authors = ["TheOtherAnxxity"]
 
 [dependencies]
