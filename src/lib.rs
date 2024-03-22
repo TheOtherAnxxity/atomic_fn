@@ -1,5 +1,7 @@
 #![no_std]
 
+//! A small, no_std crate that adds atomic function pointers.
+//! See [`AtomicFnPtr`] for examples.
 
 macro_rules! get_atomic {
     (($ty: ty, $u_cell: expr) => |$atomic: ident| { $($body:tt)* }) => {
@@ -55,7 +57,8 @@ use core::sync::atomic::Ordering;
 /// This type has the same in-memory representation as a `fn()`.
 ///
 /// **Note**: This type is only available on platforms that support atomic
-/// loads and stores of pointers. Its size depends on the target's pointer size.
+/// loads and stores of u8, u16, u32, u64, usize, or pointers.
+/// Its size depends on the target's function pointer size.
 #[cfg_attr(target_pointer_width = "8", repr(C, align(1)))]
 #[cfg_attr(target_pointer_width = "16", repr(C, align(2)))]
 #[cfg_attr(target_pointer_width = "32", repr(C, align(4)))]
@@ -201,8 +204,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// (some_ptr.load(Ordering::SeqCst))();
     /// ```
     #[deprecated(
-    since = "0.1.0",
-    note = "\
+        since = "0.1.0",
+        note = "\
         Use `compare_exchange` or `compare_exchange_weak` instead. \
         Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types.\
         "
