@@ -108,7 +108,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// `compare_and_swap` also takes an [`Ordering`] argument which describes the memory
     /// ordering of this operation. Notice that even when using [`Ordering::AcqRel`], the operation
-    /// might fail and hence just perform an `Ordering::Acquire` load, but not have `Ordering::Release` semantics.
+    /// might fail and hence just perform an [`Ordering::Acquire`] load, but not have [`Ordering::Release`] semantics.
     /// Using [`Ordering::Acquire`] makes the store part of this operation [`Ordering::Relaxed`] if it
     /// happens, and using [`Ordering::Release`] makes the load part [`Ordering::Relaxed`].
     ///
@@ -120,22 +120,47 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// `compare_and_swap` is equivalent to `compare_exchange` with the following mapping for
     /// memory orderings:
     ///
-    /// Original | Success | Failure
-    /// -------- | ------- | -------
-    /// Ordering::Relaxed  | Ordering::Relaxed | Ordering::Relaxed
-    /// Ordering::Acquire  | Ordering::Acquire | Ordering::Acquire
-    /// Ordering::Release  | Ordering::Release | Ordering::Relaxed
-    /// Ordering::AcqRel   | Ordering::AcqRel  | Ordering::Acquire
-    /// Ordering::SeqCst   | Ordering::SeqCst  | Ordering::SeqCst
+    ///  Original  |  Success  |  Failure  
+    /// ---------- | --------- | ---------
+    ///  `Relaxed` | `Relaxed` | `Relaxed`
+    ///  `Acquire` | `Acquire` | `Acquire`
+    ///  `Release` | `Release` | `Relaxed`
+    ///  `AcqRel`  | `AcqRel`  | `Acquire`
+    ///  `SeqCst`  | `SeqCst`  | `SeqCst`
     ///
     /// `compare_exchange_weak` is allowed to fail spuriously even when the comparison succeeds,
     /// which allows the compiler to generate better assembly code when the compare and swap
     /// is used in a loop.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use atomic_fn::AtomicFnPtr;
+    /// use std::sync::atomic::Ordering;
+    ///
+    /// fn a_fn() {
+    ///     println!("Called `a_fn`")
+    /// }
+    ///
+    /// fn another_fn() {
+    ///     println!("Called `another_fn`")
+    /// }
+    ///
+    /// let ptr = a_fn;
+    /// let some_ptr = AtomicFnPtr::new(ptr);
+    /// let other_ptr = another_fn;
+    ///
+    /// (some_ptr.load(Ordering::SeqCst))();
+    ///
+    /// let value = some_ptr.compare_and_swap(ptr, other_ptr, Ordering::Relaxed);
+    ///
+    /// (some_ptr.load(Ordering::SeqCst))();
+    /// ```
     #[deprecated(
         since = "0.1.0",
         note = "\
         Use `compare_exchange` or `compare_exchange_weak` instead. \
-        Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types\
+        Only exists for compatibility with applications that use `compare_and_swap` on the `core` atomic types.\
         "
     )]
     #[inline]
@@ -166,6 +191,36 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// **Note:** This method is only available on platforms that support atomic
     /// operations on pointers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::atomic::Ordering;
+    /// use atomic_fn::AtomicFnPtr;
+    ///
+    /// fn a_fn() {
+    ///     println!("Called `a_fn`")
+    /// }
+    ///
+    /// fn another_fn() {
+    ///     println!("Called `another_fn`")
+    /// }
+    ///
+    /// let ptr = a_fn;
+    /// let some_ptr  = AtomicFnPtr::new(ptr);
+    /// let other_ptr  = another_fn;
+    ///
+    /// (some_ptr.load(Ordering::SeqCst))();
+    ///
+    /// let value = some_ptr.compare_exchange(
+    ///     ptr,
+    ///     other_ptr,
+    ///     Ordering::SeqCst,
+    ///     Ordering::Relaxed
+    /// );
+    ///
+    /// (some_ptr.load(Ordering::SeqCst))();
+    /// ```
     #[inline]
     pub fn compare_exchange(
         &self,
@@ -192,7 +247,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
 
     /// Stores a value into the pointer if the current value is the same as the `current` value.
     ///
-    /// Unlike [`AtomicPtr::compare_exchange`], this function is allowed to spuriously fail even when the
+    /// Unlike [`AtomicFnPtr::compare_exchange`], this function is allowed to spuriously fail even when the
     /// comparison succeeds, which can result in more efficient code on some platforms. The
     /// return value is a result indicating whether the new value was written and containing the
     /// previous value.
@@ -208,6 +263,40 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// **Note:** This method is only available on platforms that support atomic
     /// operations on pointers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use atomic_fn::AtomicFnPtr;
+    /// use std::sync::atomic::Ordering;
+    ///
+    /// fn a_fn() {
+    ///     println!("Called `a_fn`")
+    /// }
+    ///
+    /// fn another_fn() {
+    ///     println!("Called `another_fn`")
+    /// }
+    ///
+    /// let some_ptr = AtomicFnPtr::new(a_fn);
+    /// let new = another_fn;
+    /// let mut old = some_ptr.load(Ordering::Relaxed);
+    ///
+    /// old();
+    ///
+    /// loop {
+    ///     match some_ptr.compare_exchange_weak(old, new, Ordering::SeqCst, Ordering::Relaxed) {
+    ///         Ok(x) => {
+    ///             x();
+    ///             break
+    ///         },
+    ///         Err(x) => {
+    ///             x();
+    ///             old = x
+    ///         },
+    ///     }
+    /// }
+    /// ```
     #[inline]
     pub fn compare_exchange_weak(
         &self,
@@ -245,7 +334,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     /// ordering of this operation. The first describes the required ordering for
     /// when the operation finally succeeds while the second describes the
     /// required ordering for loads. These correspond to the success and failure
-    /// orderings of [`AtomicPtr::compare_exchange`] respectively.
+    /// orderings of [`AtomicFnPtr::compare_exchange`] respectively.
     ///
     /// Using [`Ordering::Acquire`] as success ordering makes the store part of this
     /// operation [`Ordering::Relaxed`], and using [`Ordering::Release`] makes the final successful
@@ -255,6 +344,40 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///
     /// **Note:** This method is only available on platforms that support atomic
     /// operations on pointers.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[allow(clippy::fn_address_comparisons)]
+    /// use atomic_fn::AtomicFnPtr;
+    /// use std::sync::atomic::Ordering;
+    ///
+    /// fn a_fn() {
+    ///     println!("Called `a_fn`")
+    /// }
+    ///
+    /// fn another_fn() {
+    ///     println!("Called `another_fn`")
+    /// }
+    ///
+    /// let ptr: fn() = a_fn;
+    /// let some_ptr = AtomicFnPtr::new(ptr);
+    /// let new: fn() = another_fn;
+    ///
+    /// assert_eq!(some_ptr.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |_| None), Err(ptr));
+    /// (some_ptr.load(Ordering::SeqCst))();
+    /// let result = some_ptr.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+    ///     if x == ptr {
+    ///         Some(new)
+    ///     } else {
+    ///         None
+    ///     }
+    /// });
+    /// assert_eq!(result, Ok(ptr));
+    /// (some_ptr.load(Ordering::SeqCst))();
+    /// assert_eq!(some_ptr.load(Ordering::SeqCst), new);
+    /// (some_ptr.load(Ordering::SeqCst))();
+    /// ```
     #[inline]
     pub fn fetch_update<F>(
         &self,
