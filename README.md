@@ -1,7 +1,26 @@
 # atomic_fn
-A small, no_std, zero-dependency crate that implements atomic function pointers
-on platforms where the size and alignment of data pointers is the same as the size of function pointers.
-Probably works, but not recommended for use in production just yet.
+A library which provides a generic `AtomicFnPtr<T>` type for all `T` where `T` is a 
+function pointer such as `fn()` or `fn(usize) -> usize`.
+Probably works, but not recommended for serious use yet.
+
+This library always uses native atomic instructions since function pointers almost always
+have the right size and alignment for atomic loads and stores. 
+In case function pointers on the target platform do not have the right size or alignment 
+for atomic loads and stores, the library fails to compile, and if that is bypassed, 
+there are runtime guards that panic if the size or alignment is not supported.
+
+This crate uses `#![no_std]` and only depends on libcore.
+
+# Usage
+Add this to your Cargo.toml:
+```toml
+[dependencies]
+atomic_fn = "0.2"
+```
+and this to your crate root:
+```rust
+extern crate atomic;
+```
 
 ## License
 Licensed under either of
