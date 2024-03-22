@@ -355,11 +355,19 @@ impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L);
 //impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 //impl_fn_ptr!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
-const  _: () = {
+const _: () = {
     use core::mem::{size_of, align_of};
-    let [] = [(); align_of::<fn()>() - align_of::<*mut FnPtrTarget>()];
-    let [] = [(); size_of::<fn()>() - size_of::<*mut FnPtrTarget>()];
-    //if size_of::<fn()>() != size_of::<*mut FnPtrTarget>() || align_of::<fn()>() != align_of::<*mut FnPtrTarget>() {
-    //    panic!("The layout of function pointers and data pointers may not be the same on the target platform.")
-    //}
+    // If the align of both is equal, we get false, which is 0 when cast to an unsigned type
+    let [] = ["The layout of function pointers and data pointers is not be the same on the target platform.";
+        (align_of::<fn()>() != align_of::<*mut FnPtrTarget>()) as usize
+    ];
+    // If the size of both is equal, we get false, which is 0 when cast to an unsigned type
+    let [] = ["The layout of function pointers and data pointers is not be the same on the target platform.";
+        (size_of::<fn()>() != size_of::<*mut FnPtrTarget>()) as usize
+    ];
+    /*
+    if size_of::<fn()>() != size_of::<*mut FnPtrTarget>() || align_of::<fn()>() != align_of::<*mut FnPtrTarget>() {
+        panic!("The layout of function pointers and data pointers is not be the same on the target platform.")
+    }
+    */
 };
