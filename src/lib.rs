@@ -397,12 +397,13 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
-                let result = atomic.fetch_update(set_order, fetch_order, move |raw| {
-                    match func(*((&raw) as *const _ as *const T)) {
-                        Some(fn_ptr) => *((&fn_ptr) as *const T as *const _),
-                        None => None
+                let result = atomic.fetch_update(
+                    set_order,
+                    fetch_order,
+                    move |raw| {
+                        func(T::from_raw(raw)).map(|fn_ptr| fn_ptr.to_raw())
                     }
-                });
+                );
                 match result {
                     Ok(raw) => Ok(T::from_raw(raw)),
                     Err(raw) => Err(T::from_raw(raw))
