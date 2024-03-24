@@ -10,6 +10,7 @@ use core::fmt::{self, Formatter, Debug, Pointer};
 use core::panic::RefUnwindSafe;
 use core::sync::atomic::Ordering;
 
+use impls::FnPtrExt;
 use impls::get_atomic;
 
 /// A function pointer type which can be safely shared between threads.
@@ -69,7 +70,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
                 let raw = atomic.load(order);
-                *((&raw) as *const _ as *const T)
+                T::from_raw(raw)
             })
         }
     }
@@ -85,7 +86,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     pub fn store(&self, fn_ptr: T, order: Ordering) {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
-                atomic.store(*((&fn_ptr) as *const T as *const _), order);
+                atomic.store(fn_ptr.to_raw(), order);
             })
         }
     }
@@ -102,8 +103,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     pub fn swap(&self, fn_ptr: T, order: Ordering) -> T {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
-                let old_raw = atomic.swap(*((&fn_ptr) as *const T as *const _), order);
-                *((&old_raw) as *const _ as *const T)
+                let old_raw = atomic.swap(fn_ptr.to_raw(), order);
+                T::from_raw(old_raw)
             })
         }
     }
@@ -175,11 +176,11 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
                 let raw = atomic.compare_and_swap(
-                    *((&current) as *const T as *const _),
-                    *((&new) as *const T as *const _),
+                    current.to_raw(),
+                    new.to_raw(),
                     order
                 );
-                *((&raw) as *const _ as *const T)
+                T::from_raw(raw)
             })
         }
     }
@@ -240,14 +241,14 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
                 let result = atomic.compare_exchange(
-                    *((&current) as *const T as *const _),
-                    *((&new) as *const T as *const _),
+                    current.to_raw(),
+                    new.to_raw(),
                     success,
                     failure,
                 );
                 match result {
-                    Ok(raw) => Ok(*((&raw) as *const _ as *const T)),
-                    Err(raw) => Err(*((&raw) as *const _ as *const T))
+                    Ok(raw) => Ok(T::from_raw(raw)),
+                    Err(raw) => Err(T::from_raw(raw))
                 }
             })
         }
@@ -315,14 +316,14 @@ impl<T: FnPtr> AtomicFnPtr<T> {
         unsafe {
             get_atomic!((T, self.cell) => |atomic| {
                 let result = atomic.compare_exchange_weak(
-                    *((&current) as *const T as *const _),
-                    *((&new) as *const T as *const _),
+                    current.to_raw(),
+                    new.to_raw(),
                     success,
                     failure,
                 );
                 match result {
-                    Ok(raw) => Ok(*((&raw) as *const _ as *const T)),
-                    Err(raw) => Err(*((&raw) as *const _ as *const T))
+                    Ok(raw) => Ok(T::from_raw(raw)),
+                    Err(raw) => Err(T::from_raw(raw))
                 }
             })
         }
@@ -403,8 +404,8 @@ impl<T: FnPtr> AtomicFnPtr<T> {
                     }
                 });
                 match result {
-                    Ok(raw) => Ok(*((&raw) as *const _ as *const T)),
-                    Err(raw) => Err(*((&raw) as *const _ as *const T))
+                    Ok(raw) => Ok(T::from_raw(raw)),
+                    Err(raw) => Err(T::from_raw(raw))
                 }
             })
         }
