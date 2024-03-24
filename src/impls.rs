@@ -1,3 +1,36 @@
+use crate::sealed::FnPtrSealed;
+
+pub(crate) trait Raw: Copy + Unpin {}
+
+impl Raw for *mut () {}
+impl Raw for usize {}
+impl Raw for u64 {}
+impl Raw for u32 {}
+impl Raw for u16 {}
+impl Raw for u8 {}
+
+union FnPtrRawConvert<T: FnPtrExt, R: Raw> {
+    fn_ptr: T,
+    raw: R,
+}
+
+pub(crate) trait FnPtrExt: FnPtrSealed {
+    #[inline(always)]
+    unsafe fn to_raw<R: Raw>(self) -> R {
+        debug_assert_eq!(core::mem::size_of::<R>(), core::mem::size_of::<Self>());
+
+        (FnPtrRawConvert::<Self, R> { fn_ptr: self }).raw
+    }
+    #[inline(always)]
+    unsafe fn from_raw<R: Raw>(raw: R) -> Self {
+        debug_assert_eq!(core::mem::size_of::<R>(), core::mem::size_of::<Self>());
+
+        (FnPtrRawConvert::<Self, R> { raw }).fn_ptr
+    }
+}
+
+impl<T: FnPtrSealed> FnPtrExt for T {}
+
 macro_rules! get_atomic {
     (($ty: ty, $u_cell: expr) => |$atomic: ident| { $($body:tt)* }) => {
         if core::mem::size_of::<$ty>() == core::mem::size_of::<*mut ()>() {

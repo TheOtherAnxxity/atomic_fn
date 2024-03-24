@@ -4,10 +4,12 @@
 //! See [`AtomicFnPtr`] for examples.
 
 mod impls;
+
 use core::cell::UnsafeCell;
 use core::fmt::{self, Formatter, Debug, Pointer};
 use core::panic::RefUnwindSafe;
 use core::sync::atomic::Ordering;
+
 use impls::get_atomic;
 
 /// A function pointer type which can be safely shared between threads.
@@ -441,7 +443,7 @@ unsafe impl<T: FnPtr + Sync> Sync for AtomicFnPtr<T> {}
 impl<T: FnPtr + RefUnwindSafe> RefUnwindSafe for AtomicFnPtr<T> {}
 
 mod sealed {
-    pub trait FnPtrSealed {}
+    pub trait FnPtrSealed: Copy {}
 }
 
 pub trait FnPtr: Copy + sealed::FnPtrSealed /* Eq + Ord + Hash + Pointer + Debug */ {
