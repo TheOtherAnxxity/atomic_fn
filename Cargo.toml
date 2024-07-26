@@ -2,7 +2,9 @@
 # Essential stuff
 name = "atomic_fn"
 version = "0.2.1"
-edition = "2018"
+edition = "2021"
+# Determined using https://github.com/foresterre/cargo-msrv.
+rust-version = "1.56.1"
 license = "MIT OR Apache-2.0"
 # Description and links to documentation and git repository
 documentation = "https://docs.rs/atomic_fn/latest/"
@@ -13,6 +15,6 @@ categories = ["no-std"]
 keywords = ["no_std", "atomic"]
 # Readme and authors
 readme = "README.md"
-authors = ["TheOtherAnxxity"]
+authors = ["TheOtherAnxxity", "vcfxb"]
 
 [dependencies]
