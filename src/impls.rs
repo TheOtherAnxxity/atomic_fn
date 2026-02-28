@@ -7,7 +7,6 @@ impl Raw for usize {}
 impl Raw for u64 {}
 impl Raw for u32 {}
 impl Raw for u16 {}
-impl Raw for u8 {}
 
 union FnPtrRawConvert<T: FnPtrExt, R: Raw> {
     fn_ptr: T,
@@ -47,17 +46,12 @@ macro_rules! get_atomic {
         }
         else {
             use core::sync::atomic::{
-                AtomicU8,
                 AtomicU16,
                 AtomicU32,
                 AtomicU64,
             };
 
             match core::mem::size_of::<$ty>() {
-                8 => {
-                    let $atomic = &*($u_cell.get() as *mut AtomicU8);
-                    $($body)*
-                },
                 16 => {
                     let $atomic = &*($u_cell.get() as *mut AtomicU16);
                     $($body)*

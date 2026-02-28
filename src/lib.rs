@@ -18,9 +18,22 @@ use impls::get_atomic;
 /// This type has the same in-memory representation as a `fn()`.
 ///
 /// **Note**: This type is only available on platforms that support atomic
-/// loads and stores of u8, u16, u32, u64, usize, or pointers.
+/// loads and stores of u16, u32, u64, usize, or pointers.
 /// Its size depends on the target's function pointer size.
-#[cfg_attr(target_pointer_width = "8", repr(C, align(1)))]
+///
+/// # Compatibility with other atomics
+///
+/// This type is not guaranteed to be alignment or ABI-compatible with any other
+/// atomic function pointer type, including in C or C++.
+///
+/// # Function pointers vs function item types
+///
+/// A `fn()` function pointer and the name of a `fn foo {}` are not the same
+/// type: the latter is zero-sized and statically dispatches when called, but
+/// coerces to a compatible `fn()`. A function pointer dynamically dispatches.
+///
+/// Because this type works with function pointers, avoid constructing an
+/// `AtomicFnPtr` with a function item type - most methods will not work.
 #[cfg_attr(target_pointer_width = "16", repr(C, align(2)))]
 #[cfg_attr(target_pointer_width = "32", repr(C, align(4)))]
 #[cfg_attr(target_pointer_width = "64", repr(C, align(8)))]
@@ -154,9 +167,9 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///     println!("Called `another_fn`")
     /// }
     ///
-    /// let ptr = a_fn;
+    /// let ptr: fn() = a_fn;
     /// let some_ptr = AtomicFnPtr::new(ptr);
-    /// let other_ptr = another_fn;
+    /// let other_ptr: fn() = another_fn;
     ///
     /// (some_ptr.load(Ordering::SeqCst))();
     ///
@@ -216,9 +229,9 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///     println!("Called `another_fn`")
     /// }
     ///
-    /// let ptr = a_fn;
+    /// let ptr: fn() = a_fn;
     /// let some_ptr  = AtomicFnPtr::new(ptr);
-    /// let other_ptr  = another_fn;
+    /// let other_ptr: fn()  = another_fn;
     ///
     /// (some_ptr.load(Ordering::SeqCst))();
     ///
@@ -287,7 +300,7 @@ impl<T: FnPtr> AtomicFnPtr<T> {
     ///     println!("Called `another_fn`")
     /// }
     ///
-    /// let some_ptr = AtomicFnPtr::new(a_fn);
+    /// let some_ptr = AtomicFnPtr::new(a_fn as fn());
     /// let new = another_fn;
     /// let mut old = some_ptr.load(Ordering::Relaxed);
     ///
@@ -481,6 +494,7 @@ macro_rules! impl_fn_ptr {
 }
 
 impl_fn_ptr!();
+impl_fn_ptr!(A);
 impl_fn_ptr!(A, B);
 impl_fn_ptr!(A, B, C);
 impl_fn_ptr!(A, B, C, D);
